@@ -11,6 +11,7 @@ class Drop(models.Model):
 
     is_active = models.BooleanField(default=False)
     is_allocation_complete = models.BooleanField(default=False)
+    allocation_started = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

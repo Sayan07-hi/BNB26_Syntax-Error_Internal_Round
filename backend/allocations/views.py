@@ -1,13 +1,15 @@
 from django.db import IntegrityError, transaction
 
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .serializers import AllocationSerializer
 from .models import Allocation, IdempotencyKey
 from drops.models import Entry
-from .services import allocate_seat
+from .services import allocate_seat, run_fair_allocation
 
 
 class AllocationCreateView(generics.CreateAPIView):
@@ -41,7 +43,9 @@ class AllocationCreateView(generics.CreateAPIView):
                 user=self.request.user
             )
         except Entry.DoesNotExist:
-            raise ValidationError("Entry not found.")
+            raise ValidationError(
+                "Entry not found."
+            )
 
         # Prevent duplicate allocation
         if Allocation.objects.filter(entry=entry).exists():
@@ -49,7 +53,12 @@ class AllocationCreateView(generics.CreateAPIView):
                 "This entry already has an allocation."
             )
 
-        # Allocate seat
+        # Allocation is only allowed after the allocation phase starts
+        if not entry.drop.allocation_started:
+            raise ValidationError(
+                "Allocation has not started yet."
+            )
+
         allocation = allocate_seat(entry.id)
 
         # Store idempotency key with the result
@@ -67,3 +76,16 @@ class AllocationCreateView(generics.CreateAPIView):
             allocation = existing_key.allocation
 
         serializer.instance = allocation
+
+
+class FairAllocationView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, drop_id):
+        allocated_count = run_fair_allocation(drop_id)
+
+        return Response({
+            "message": "Fair allocation completed.",
+            "drop_id": drop_id,
+            "allocated_count": allocated_count,
+        })

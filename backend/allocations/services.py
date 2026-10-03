@@ -1,8 +1,9 @@
 from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from .models import Allocation
-from drops.models import Entry, Seat
+from drops.models import Entry, Seat, Drop
 
 
 @transaction.atomic
@@ -16,18 +17,25 @@ def allocate_seat(entry_id):
 
     # Prevent duplicate allocation
     if Allocation.objects.filter(entry=entry).exists():
-        raise ValidationError("Entry already has an allocation.")
+        raise ValidationError(
+            "Entry already has an allocation."
+        )
 
     # Lock an available seat
     seat = (
         Seat.objects
         .select_for_update()
-        .filter(drop=entry.drop, allocation__isnull=True)
+        .filter(
+            drop=entry.drop,
+            allocation__isnull=True
+        )
         .first()
     )
 
     if not seat:
-        raise ValidationError("No seats available.")
+        raise ValidationError(
+            "No seats available."
+        )
 
     allocation = Allocation.objects.create(
         entry=entry,
@@ -35,3 +43,59 @@ def allocate_seat(entry_id):
     )
 
     return allocation
+
+
+@transaction.atomic
+def run_fair_allocation(drop_id):
+    drop = (
+        Drop.objects
+        .select_for_update()
+        .get(id=drop_id)
+    )
+
+    # Registration must be closed
+    if timezone.now() < drop.registration_end:
+        raise ValidationError(
+            "Registration is still active."
+        )
+
+    # Prevent running allocation twice
+    if drop.allocation_started:
+        raise ValidationError(
+            "Allocation has already started."
+        )
+
+    # Get all eligible entries
+    entries = list(
+        Entry.objects
+        .filter(drop=drop)
+        .order_by("joined_at")
+    )
+
+    # Randomize allocation order
+    import random
+    random.shuffle(entries)
+
+    # Mark allocation as started
+    drop.allocation_started = True
+    drop.save(
+        update_fields=["allocation_started"]
+    )
+
+    allocated_count = 0
+
+    # Allocate seats in randomized order
+    for entry in entries:
+        try:
+            allocate_seat(entry.id)
+            allocated_count += 1
+        except ValidationError:
+            break
+
+    # Mark allocation as complete
+    drop.is_allocation_complete = True
+    drop.save(
+        update_fields=["is_allocation_complete"]
+    )
+
+    return allocated_count
