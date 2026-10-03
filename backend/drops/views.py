@@ -1,9 +1,11 @@
+from django_ratelimit.decorators import ratelimit
+from django.utils.decorators import method_decorator
 from django.db import IntegrityError
 from django.utils import timezone
 
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, Throttled
 
 from .models import Entry
 from .serializers import EntrySerializer
@@ -12,6 +14,22 @@ from .serializers import EntrySerializer
 class EntryCreateView(generics.CreateAPIView):
     serializer_class = EntrySerializer
     permission_classes = [IsAuthenticated]
+
+    @method_decorator(
+        ratelimit(
+            key="user",
+            rate="5/m",
+            method="POST",
+            block=False
+        )
+    )
+    def post(self, request, *args, **kwargs):
+        if getattr(request, "limited", False):
+            raise Throttled(
+                detail="Rate limit exceeded. Try again later."
+            )
+
+        return super().post(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         drop = serializer.validated_data["drop"]
