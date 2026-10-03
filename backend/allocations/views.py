@@ -9,7 +9,11 @@ from rest_framework.views import APIView
 from .serializers import AllocationSerializer
 from .models import Allocation, IdempotencyKey
 from drops.models import Entry
-from .services import allocate_seat, run_fair_allocation
+from .services import (
+    allocate_seat,
+    run_fair_allocation,
+    get_allocation_metrics,
+)
 
 
 class AllocationCreateView(generics.CreateAPIView):
@@ -89,3 +93,12 @@ class FairAllocationView(APIView):
             "drop_id": drop_id,
             "allocated_count": allocated_count,
         })
+
+
+class AllocationMetricsView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, drop_id):
+        metrics = get_allocation_metrics(drop_id)
+
+        return Response(metrics)

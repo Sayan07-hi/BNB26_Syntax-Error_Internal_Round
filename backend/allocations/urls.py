@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     AllocationCreateView,
     FairAllocationView,
+    AllocationMetricsView,
 )
 
 
@@ -16,4 +17,9 @@ urlpatterns = [
         FairAllocationView.as_view(),
         name="fair-allocation",
     ),
+    path(
+    "metrics/<int:drop_id>/",
+    AllocationMetricsView.as_view(),
+    name="allocation-metrics",
+),
 ]

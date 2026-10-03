@@ -99,3 +99,23 @@ def run_fair_allocation(drop_id):
     )
 
     return allocated_count
+
+def get_allocation_metrics(drop_id):
+    total_entries = Entry.objects.filter(drop_id=drop_id).count()
+
+    allocated_entries = Allocation.objects.filter(
+        entry__drop_id=drop_id
+    ).count()
+
+    allocation_rate = (
+        allocated_entries / total_entries * 100
+        if total_entries > 0
+        else 0
+    )
+
+    return {
+        "drop_id": drop_id,
+        "total_entries": total_entries,
+        "allocated_entries": allocated_entries,
+        "allocation_rate": round(allocation_rate, 2),
+    }
