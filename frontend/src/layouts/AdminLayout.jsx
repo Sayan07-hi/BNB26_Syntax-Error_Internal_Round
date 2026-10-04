@@ -1,10 +1,14 @@
 import { useState } from 'react';
-import { NavLink, Outlet, Link } from 'react-router-dom';
+import { NavLink, Outlet, Link, Navigate } from 'react-router-dom';
 import Icon from '../components/Icon';
+import { isAdminUser } from '../api/api';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  if (!localStorage.getItem('fairDropAccessToken')) return <Navigate to="/login" replace />;
+  if (!isAdminUser()) return <Navigate to="/dashboard" replace />;
 
   return (
     <div className="admin-layout">

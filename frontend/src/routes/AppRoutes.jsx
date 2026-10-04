@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import Home from '../pages/Home';
 import About from '../pages/About';
@@ -21,6 +21,7 @@ import AdminOverview from '../pages/admin/AdminOverview';
 import AdminApplications from '../pages/admin/AdminApplications';
 import AdminMonitoring from '../pages/admin/AdminMonitoring';
 import AdminPlaceholder from '../pages/admin/AdminPlaceholder';
+import { isAdminUser } from '../api/api';
 
 const AppRoutes = () => {
   return (
@@ -40,7 +41,7 @@ const AppRoutes = () => {
         <Route path="allocations" element={<Allocations />} />
         <Route path="reports" element={<TransparencyAnalytics />} />
         <Route path="transparency" element={<TransparencyAnalytics />} />
-        <Route path="simulation" element={<Simulation />} />
+        <Route path="simulation" element={isAdminUser() ? <Simulation /> : <Navigate to="/dashboard" replace />} />
         <Route path="*" element={<NotFound />} />
       </Route>
 

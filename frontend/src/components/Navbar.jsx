@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import Button from './Button';
 import Icon from './Icon';
+import { clearTokens, isAdminUser } from '../api/api';
 import './Navbar.css';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(localStorage.getItem('fairDropAccessToken')));
+  const [isAdmin, setIsAdmin] = useState(() => isAdminUser());
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -16,6 +19,24 @@ const Navbar = () => {
   useEffect(() => {
     setIsOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const syncAuthentication = () => {
+      setIsAuthenticated(Boolean(localStorage.getItem('fairDropAccessToken')));
+      setIsAdmin(isAdminUser());
+    };
+    window.addEventListener('fairdrop-auth-change', syncAuthentication);
+    window.addEventListener('storage', syncAuthentication);
+    return () => {
+      window.removeEventListener('fairdrop-auth-change', syncAuthentication);
+      window.removeEventListener('storage', syncAuthentication);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    clearTokens();
+    navigate('/login');
+  };
 
   // Track scroll for enhanced glass shadow
   useEffect(() => {
@@ -54,16 +75,21 @@ const Navbar = () => {
           <NavLink to="/transparency" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
             Transparency
           </NavLink>
-          <NavLink to="/simulation" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-            Simulation
-          </NavLink>
+          {isAdmin && <NavLink to="/admin/simulation" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>Simulation</NavLink>}
+          {isAdmin && <NavLink to="/admin" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>Admin</NavLink>}
           <NavLink to="/about" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
             About
           </NavLink>
           
           <div className="navbar-actions">
-            <Button variant="secondary" size="sm" onClick={() => navigate('/login')}>Sign In</Button>
-            <Button variant="primary" size="sm" onClick={() => navigate('/register')}>Register</Button>
+            {isAuthenticated ? (
+              <Button variant="secondary" size="sm" onClick={handleLogout}>Logout</Button>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => navigate('/login')}>Sign In</Button>
+                <Button variant="primary" size="sm" onClick={() => navigate('/register')}>Register</Button>
+              </>
+            )}
           </div>
         </nav>
 
@@ -87,12 +113,19 @@ const Navbar = () => {
             <NavLink to="/eligibility" className="mobile-nav-link">Eligibility</NavLink>
             <NavLink to="/allocations" className="mobile-nav-link">Allocations</NavLink>
             <NavLink to="/transparency" className="mobile-nav-link">Transparency</NavLink>
-            <NavLink to="/simulation" className="mobile-nav-link">Simulation</NavLink>
+            {isAdmin && <NavLink to="/admin/simulation" className="mobile-nav-link">Simulation</NavLink>}
+            {isAdmin && <NavLink to="/admin" className="mobile-nav-link">Admin Dashboard</NavLink>}
             <NavLink to="/about" className="mobile-nav-link">About</NavLink>
             
             <div className="mobile-actions">
-              <Button variant="secondary" fullWidth onClick={() => navigate('/login')}>Sign In</Button>
-              <Button variant="primary" fullWidth onClick={() => navigate('/register')}>Register</Button>
+              {isAuthenticated ? (
+                <Button variant="secondary" fullWidth onClick={handleLogout}>Logout</Button>
+              ) : (
+                <>
+                  <Button variant="secondary" fullWidth onClick={() => navigate('/login')}>Sign In</Button>
+                  <Button variant="primary" fullWidth onClick={() => navigate('/register')}>Register</Button>
+                </>
+              )}
             </div>
           </div>
         </div>

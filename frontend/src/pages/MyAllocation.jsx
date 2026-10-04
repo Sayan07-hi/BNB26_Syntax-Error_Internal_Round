@@ -26,6 +26,8 @@ const MyAllocation = () => {
   }, [entryId, refreshCount]);
 
   const allocated = Boolean(entry?.allocation);
+  const allocationComplete = Boolean(entry?.allocation_complete);
+  const statusLabel = allocated ? 'Allocated' : allocationComplete ? 'Not allocated' : 'Awaiting allocation';
 
   return (
     <div className="animate-fade-in" style={{ maxWidth: '960px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -36,12 +38,12 @@ const MyAllocation = () => {
             <h1 style={{ margin: '0 0 0.25rem 0' }}>Allocation &amp; Claim Hub</h1>
             <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>Live status from the Fair Drop backend.</p>
           </div>
-          <Badge variant={allocated ? 'success' : 'warning'} dot>{loading ? 'Loading status' : allocated ? 'Allocated' : 'Waiting for allocation'}</Badge>
+          <Badge variant={allocated ? 'success' : allocationComplete ? 'secondary' : 'warning'} dot>{loading ? 'Loading status' : statusLabel}</Badge>
         </div>
       </div>
 
       <Card style={{ borderTop: `4px solid ${allocated ? 'var(--color-success)' : 'var(--color-primary)'}` }}>
-        <CardHeader title={allocated ? 'Allocation Result' : 'Queue Status'} />
+        <CardHeader title={allocated || allocationComplete ? 'Allocation Result' : 'Queue Status'} />
         <CardContent style={{ padding: '2rem' }}>
           {loading ? <p>Loading your allocation status…</p> : error ? (
             <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>
@@ -54,7 +56,7 @@ const MyAllocation = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
               <div><span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>Drop</span><div style={{ fontWeight: 700 }}>{entry.drop_name} (#{entry.drop_id})</div></div>
               <div><span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>Entry ID</span><div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{entry.entry_id}</div></div>
-              <div><span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>Result</span><div style={{ fontWeight: 700 }}>{allocated ? `Seat #${entry.allocation.seat_number}` : 'Waiting for the administrator to run fair allocation'}</div></div>
+              <div><span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>Result</span><div style={{ fontWeight: 700 }}>{allocated ? `Seat #${entry.allocation.seat_number}` : allocationComplete ? 'No seat was available in this allocation.' : 'Awaiting allocation'}</div></div>
               {allocated && <div><span style={{ color: 'var(--color-text-tertiary)', fontSize: '0.8rem' }}>Allocated at</span><div style={{ fontWeight: 600 }}>{new Date(entry.allocation.allocated_at).toLocaleString()}</div></div>}
               <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
                 <Button variant="secondary" size="sm" onClick={() => setRefreshCount((count) => count + 1)}>Refresh status</Button>

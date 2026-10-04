@@ -1,169 +1,620 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Card, { CardContent, CardHeader } from '../components/Card';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
 import Icon from '../components/Icon';
 import './Simulation.css';
 
-const RATE_LIMIT = 5;
-const AVAILABLE_SEATS = 8;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const DEFAULT_DROP_ID = import.meta.env.VITE_DEMO_DROP_ID ? Number(import.meta.env.VITE_DEMO_DROP_ID) : '';
+const DEFAULT_CONCURRENCY = 5;
 
-const makeRequests = (scenario) => Array.from({ length: 12 }, (_, index) => ({
-  id: `REQ-${String(index + 1).padStart(2, '0')}`,
-  account: scenario === 'normal' ? `user-${String(index + 1).padStart(2, '0')}` : 'burst-user',
-  attempt: scenario === 'normal' ? 1 : index + 1,
-  status: 'Pending',
-  seat: null,
-}));
+const getInitialDropId = () => {
+  const storedDropId = localStorage.getItem('fairDropDropId');
+
+  if (storedDropId && Number(storedDropId) > 0) {
+    return Number(storedDropId);
+  }
+
+  return DEFAULT_DROP_ID;
+};
 
 const STAGES = [
-  { title: '1. Request arrival', description: 'Send the selected request profile to the entry endpoint.' },
-  { title: '2. Intake controls', description: 'Apply the per-user limit and one-entry-per-drop constraint.' },
-  { title: '3. Random allocation', description: 'Shuffle accepted entries and assign the available seats.' },
-  { title: '4. Results', description: 'Review accepted entries, blocked repeats, and allocation rate.' },
+  {
+    title: '1. Request arrival',
+    description:
+      'Generate concurrent authenticated requests against the live entry endpoint.',
+  },
+  {
+    title: '2. Intake controls',
+    description:
+      'Process authentication, rate limiting, registration checks, and duplicate protection.',
+  },
+  {
+    title: '3. Backend processing',
+    description:
+      'Measure the real response latency from the Django API and database.',
+  },
+  {
+    title: '4. Results',
+    description:
+      'Review successful requests, failures, latency, and backend response details.',
+  },
 ];
 
+const STATUS_LABELS = {
+  200: 'Success',
+  201: 'Created',
+  400: 'Rejected',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  429: 'Rate limited',
+  500: 'Server error',
+};
+
+const statusClass = (status) => {
+  if (typeof status !== 'number') return 'error';
+
+  if (status >= 200 && status < 300) return 'success';
+  if (status === 429) return 'rate-limited';
+  if (status >= 400 && status < 500) return 'rejected';
+
+  return 'error';
+};
+
 const Simulation = () => {
-  const [scenario, setScenario] = useState('normal');
+  const [dropId, setDropId] = useState(getInitialDropId);
+  const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
+
   const [stage, setStage] = useState(0);
   const [running, setRunning] = useState(false);
-  const [speed, setSpeed] = useState(1);
-  const [requests, setRequests] = useState(() => makeRequests('normal'));
-  const [progress, setProgress] = useState(0);
-  const [logs, setLogs] = useState(['Select a request profile, then start the in-browser scenario.']);
-  const timerRef = useRef(null);
+  const [completed, setCompleted] = useState(false);
 
-  const accepted = useMemo(() => requests.filter((request) => ['Accepted', 'Allocated', 'No seat available'].includes(request.status)), [requests]);
-  const duplicateCount = requests.filter((request) => request.status === 'Duplicate blocked').length;
-  const limitedCount = requests.filter((request) => request.status === 'Rate limited').length;
-  const allocatedCount = requests.filter((request) => request.status === 'Allocated').length;
-  const allocationRate = accepted.length ? Math.round((allocatedCount / accepted.length) * 100) : 0;
-  const completed = stage === STAGES.length;
+  const [simulation, setSimulation] = useState(null);
+
+  const [logs, setLogs] = useState([
+    'Ready. Start a live backend simulation to generate real HTTP traffic.',
+  ]);
 
   const addLog = (message) => {
-    setLogs((previous) => [`${new Date().toLocaleTimeString()}  ${message}`, ...previous].slice(0, 12));
+    setLogs((previous) =>
+      [
+        `${new Date().toLocaleTimeString()}  ${message}`,
+        ...previous,
+      ].slice(0, 12)
+    );
   };
 
-  const reset = (nextScenario = scenario) => {
-    clearInterval(timerRef.current);
+  const reset = () => {
     setRunning(false);
+    setCompleted(false);
     setStage(0);
-    setProgress(0);
-    setRequests(makeRequests(nextScenario));
-    setLogs(['Scenario reset. No requests were sent to Django.']);
+    setSimulation(null);
+    setLogs([
+      'Simulation reset. No requests are currently running.',
+    ]);
   };
 
-  useEffect(() => {
-    if (!running) return undefined;
-    timerRef.current = setInterval(() => {
-      setStage((current) => {
-        if (current === 0) {
-          addLog(`Prepared 12 ${scenario === 'normal' ? 'distinct-user' : 'same-user burst'} POST /api/v1/entries/ requests.`);
-          setProgress(20);
-          return 1;
-        }
-        if (current === 1) {
-          setRequests((previous) => previous.map((request, index) => {
-            if (scenario === 'normal') return { ...request, status: 'Accepted' };
-            if (index === 0) return { ...request, status: 'Accepted' };
-            if (index < RATE_LIMIT) return { ...request, status: 'Duplicate blocked' };
-            return { ...request, status: 'Rate limited' };
-          }));
-          addLog(scenario === 'normal'
-            ? '12 distinct accounts pass the modeled 5/min per-user limit and uniqueness constraint.'
-            : 'One entry accepted; four repeated entries hit the unique constraint; seven later requests exceed 5/min.');
-          setProgress(50);
-          return 2;
-        }
-        if (current === 2) {
-          setRequests((previous) => {
-            const candidates = previous.filter((request) => request.status === 'Accepted');
-            for (let index = candidates.length - 1; index > 0; index -= 1) {
-              const swap = Math.floor(Math.random() * (index + 1));
-              [candidates[index], candidates[swap]] = [candidates[swap], candidates[index]];
-            }
-            const seatByRequest = new Map(candidates.map((request, index) => [request.id, index < AVAILABLE_SEATS ? index + 1 : null]));
-            return previous.map((request) => {
-              if (request.status !== 'Accepted') return request;
-              const seat = seatByRequest.get(request.id);
-              return seat ? { ...request, status: 'Allocated', seat: `Seat ${seat}` } : { ...request, status: 'No seat available' };
-            });
-          });
-          addLog(`Shuffled accepted entries and assigned up to ${AVAILABLE_SEATS} seats.`);
-          setProgress(80);
-          return 3;
-        }
-        if (current === 3) {
-          addLog(`Scenario complete: ${allocatedCount} seats assigned from ${accepted.length} distinct accepted entries.`);
-          setProgress(100);
-          setRunning(false);
-          clearInterval(timerRef.current);
-          return 4;
-        }
-        return current;
-      });
-    }, 1250 / speed);
-    return () => clearInterval(timerRef.current);
-  }, [running, speed, scenario, allocatedCount, accepted.length]);
-
-  const chooseScenario = (nextScenario) => {
+  const runSimulation = async () => {
     if (running) return;
-    setScenario(nextScenario);
-    reset(nextScenario);
-    setLogs([`${nextScenario === 'normal' ? 'Normal traffic' : 'Adversarial burst'} selected. This is an in-browser model.`]);
+
+    const accessToken = localStorage.getItem('fairDropAccessToken');
+
+    if (!accessToken) {
+      addLog('No FairDrop access token found. Please log in first.');
+      window.location.assign('/login');
+      return;
+    }
+
+    const currentDropId = Number(
+      localStorage.getItem('fairDropDropId') || dropId
+    );
+
+    if (!currentDropId || currentDropId < 1) {
+      addLog('No active Drop selected. Open the Dashboard or Admin control center first.');
+      return;
+    }
+
+    setDropId(currentDropId);
+    setRunning(true);
+    setCompleted(false);
+    setStage(0);
+    setSimulation(null);
+
+    addLog(`Starting live simulation for Drop ${currentDropId}.`);
+
+    addLog(
+      `Preparing ${concurrency} concurrent authenticated POST /api/v1/entries/ requests.`
+    );
+
+    try {
+      setStage(1);
+
+      const response = await fetch(`${API_BASE_URL}/simulation/run/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          drop_id: currentDropId,
+          concurrency: Number(concurrency),
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        localStorage.removeItem('fairDropAccessToken');
+        localStorage.removeItem('fairDropRefreshToken');
+        window.location.assign('/login');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.detail ||
+            `Simulation request failed with HTTP ${response.status}.`
+        );
+      }
+
+      setStage(2);
+
+      addLog(
+        `Backend completed ${payload.requests} concurrent request${
+          payload.requests === 1 ? '' : 's'
+        }.`
+      );
+
+      setSimulation(payload);
+
+      setStage(3);
+
+      if (payload.failed === 0) {
+        addLog(
+          `All ${payload.successful} requests completed successfully.`
+        );
+      } else {
+        addLog(
+          `${payload.successful} successful, ${payload.failed} failed request${
+            payload.failed === 1 ? '' : 's'
+          }.`
+        );
+      }
+
+      addLog(
+        `Average latency: ${payload.average_latency_ms} ms · P95: ${payload.p95_latency_ms} ms.`
+      );
+
+      setStage(4);
+      setCompleted(true);
+    } catch (error) {
+      addLog(`Simulation error: ${error.message}`);
+      setSimulation(null);
+      setStage(0);
+    } finally {
+      setRunning(false);
+    }
   };
 
-  const statusClass = (status) => status.toLowerCase().replaceAll(' ', '-').replaceAll('.', '');
+  const results = simulation?.results || [];
+
+  const successfulCount = simulation?.successful ?? 0;
+  const failedCount = simulation?.failed ?? 0;
+
+  const successRate = useMemo(() => {
+    if (!simulation?.requests) return 0;
+
+    return Math.round(
+      (simulation.successful / simulation.requests) * 100
+    );
+  }, [simulation]);
 
   return (
     <div className="simulation-page animate-fade-in">
       <div className="simulation-header">
         <div className="header-left">
           <div className="badge-row">
-            <Badge variant="primary" dot>ENGINEERING DEMO</Badge>
-            <span className="demo-notice-tag">BROWSER MODEL · NO API TRAFFIC</span>
+            <Badge variant="primary" dot>
+              LIVE BACKEND DEMO
+            </Badge>
+
+            <span className="demo-notice-tag">
+              REAL API TRAFFIC
+            </span>
           </div>
+
           <h1>Traffic &amp; Allocation Simulator</h1>
-          <p className="header-subtitle">Compare ordinary sign-up traffic with a single-account request burst. The model mirrors the configured entry limit, duplicate-entry constraint, and randomized seat allocation; it does not load-test the server.</p>
-          <div className="scenario-selector" role="group" aria-label="Traffic profile">
-            <Button variant={scenario === 'normal' ? 'primary' : 'outline'} size="sm" disabled={running} onClick={() => chooseScenario('normal')}>Normal traffic</Button>
-            <Button variant={scenario === 'adversarial' ? 'primary' : 'outline'} size="sm" disabled={running} onClick={() => chooseScenario('adversarial')}>Adversarial burst</Button>
+
+          <p className="header-subtitle">
+            Generate concurrent authenticated requests against the actual
+            FairDrop backend and measure real request success, latency,
+            and failure behaviour.
+          </p>
+
+          <div
+            className="scenario-selector"
+            role="group"
+            aria-label="Simulation configuration"
+          >
+            <label className="simulation-input-label">
+              Drop ID
+
+              <input
+                type="number"
+                min="1"
+                value={dropId}
+                disabled={running}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDropId(value);
+                  localStorage.setItem('fairDropDropId', value);
+                }}
+              />
+            </label>
+
+            <label className="simulation-input-label">
+              Concurrent requests
+
+              <select
+                value={concurrency}
+                disabled={running}
+                onChange={(event) =>
+                  setConcurrency(Number(event.target.value))
+                }
+              >
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
+
         <div className="simulation-controls">
-          {!running && !completed && <Button variant="primary" size="lg" icon={<Icon name="play" size={16} />} onClick={() => setRunning(true)}>{stage ? 'Resume' : 'Start scenario'}</Button>}
-          {running && <Button variant="secondary" size="lg" icon={<Icon name="pause" size={16} />} onClick={() => setRunning(false)}>Pause</Button>}
-          <Button variant="outline" size="md" icon={<Icon name="refresh" size={16} />} onClick={() => reset()}>Reset</Button>
-          <div className="speed-toggle"><span>Speed:</span>{[1, 2, 4].map((value) => <button key={value} className={`speed-btn ${speed === value ? 'active' : ''}`} onClick={() => setSpeed(value)}>{value}x</button>)}</div>
+          {!running && (
+            <Button
+              variant="primary"
+              size="lg"
+              icon={<Icon name="play" size={16} />}
+              onClick={runSimulation}
+            >
+              {completed ? 'Run again' : 'Run live simulation'}
+            </Button>
+          )}
+
+          {running && (
+            <Button
+              variant="secondary"
+              size="lg"
+              disabled
+              icon={<Icon name="play" size={16} />}
+            >
+              Running...
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="md"
+            icon={<Icon name="refresh" size={16} />}
+            onClick={reset}
+            disabled={running}
+          >
+            Reset
+          </Button>
         </div>
       </div>
 
+      <Card className="simulated-participants-card">
+        <CardHeader
+          title="LIVE CONCURRENT USER SIMULATION"
+          action={<Badge variant="primary">5 authenticated participants</Badge>}
+        />
+        <CardContent>
+          <p style={{ marginTop: 0 }}>These are simulated authenticated accounts making real concurrent HTTP requests; they are not five human users.</p>
+          <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+            {['sim01@test.com', 'sim02@test.com', 'sim03@test.com', 'sim04@test.com', 'sim05@test.com'].map((email) => (
+              <Badge key={email} variant="secondary">{email}</Badge>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="stage-tracker-card">
         <CardContent>
-          <div className="progress-header"><div className="current-stage-title"><span className="stage-dot pulse-dot" /><strong>{completed ? 'Scenario complete' : STAGES[stage].title}:</strong> {completed ? 'Review the modeled request outcomes.' : STAGES[stage].description}</div><div className="progress-pct-text">{progress}%</div></div>
-          <div className="overall-progress-bar"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
-          <div className="stage-steps-grid">{STAGES.map((item, index) => <div key={item.title} className={`step-bubble ${stage > index ? 'completed' : ''} ${stage === index && running ? 'active' : ''}`}><div className="step-num">{index + 1}</div><div className="step-name">{item.title.split('. ')[1]}</div></div>)}</div>
+          <div className="progress-header">
+            <div className="current-stage-title">
+              <span className="stage-dot pulse-dot" />
+
+              <strong>
+                {completed
+                  ? 'Simulation complete'
+                  : STAGES[Math.min(stage, STAGES.length - 1)].title}
+              </strong>{' '}
+
+              {completed
+                ? 'Review the measured backend results.'
+                : STAGES[Math.min(stage, STAGES.length - 1)].description}
+            </div>
+
+            <div className="progress-pct-text">
+              {completed
+                ? '100%'
+                : `${Math.min(stage * 25, 100)}%`}
+            </div>
+          </div>
+
+          <div className="overall-progress-bar">
+            <div
+              className="progress-fill"
+              style={{
+                width: `${completed ? 100 : Math.min(stage * 25, 100)}%`,
+              }}
+            />
+          </div>
+
+          <div className="stage-steps-grid">
+            {STAGES.map((item, index) => (
+              <div
+                key={item.title}
+                className={`step-bubble ${
+                  stage > index || completed ? 'completed' : ''
+                } ${stage === index && running ? 'active' : ''}`}
+              >
+                <div className="step-num">{index + 1}</div>
+
+                <div className="step-name">
+                  {item.title.split('. ')[1]}
+                </div>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
       <div className="simulation-kpi-grid">
-        <div className="kpi-mini-card"><div className="kpi-mini-label">Requests</div><div className="kpi-mini-val">{requests.length}</div><div className="kpi-mini-sub">Simulated POSTs</div></div>
-        <div className="kpi-mini-card"><div className="kpi-mini-label">Unique entries</div><div className="kpi-mini-val text-primary">{accepted.length}</div><div className="kpi-mini-sub">Accepted by intake model</div></div>
-        <div className="kpi-mini-card"><div className="kpi-mini-label">Duplicates blocked</div><div className="kpi-mini-val text-warning">{duplicateCount}</div><div className="kpi-mini-sub">One entry per user/drop</div></div>
-        <div className="kpi-mini-card"><div className="kpi-mini-label">Rate limited</div><div className="kpi-mini-val text-danger">{limitedCount}</div><div className="kpi-mini-sub">Limit: {RATE_LIMIT}/min per user</div></div>
-        <div className="kpi-mini-card"><div className="kpi-mini-label">Allocation rate</div><div className="kpi-mini-val text-success">{completed ? `${allocationRate}%` : '—'}</div><div className="kpi-mini-sub">Seats / accepted entries</div></div>
+        <div className="kpi-mini-card">
+          <div className="kpi-mini-label">Requests</div>
+
+          <div className="kpi-mini-val">
+            {simulation?.requests ?? '—'}
+          </div>
+
+          <div className="kpi-mini-sub">
+            Real HTTP requests
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-mini-label">Successful</div>
+
+          <div className="kpi-mini-val text-primary">
+            {simulation ? successfulCount : '—'}
+          </div>
+
+          <div className="kpi-mini-sub">
+            HTTP 2xx responses
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-mini-label">Failed</div>
+
+          <div className="kpi-mini-val text-warning">
+            {simulation ? failedCount : '—'}
+          </div>
+
+          <div className="kpi-mini-sub">
+            Rejected or failed requests
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-mini-label">Average latency</div>
+
+          <div className="kpi-mini-val">
+            {simulation
+              ? `${simulation.average_latency_ms} ms`
+              : '—'}
+          </div>
+
+          <div className="kpi-mini-sub">
+            Measured API response time
+          </div>
+        </div>
+
+        <div className="kpi-mini-card">
+          <div className="kpi-mini-label">P95 latency</div>
+
+          <div className="kpi-mini-val text-success">
+            {simulation
+              ? `${simulation.p95_latency_ms} ms`
+              : '—'}
+          </div>
+
+          <div className="kpi-mini-sub">
+            95th percentile
+          </div>
+        </div>
       </div>
 
       <div className="sim-split-grid">
-        <div className="sim-table-col"><Card><CardHeader title="Request trace" action={<Badge variant={running ? 'warning' : completed ? 'success' : 'secondary'} dot>{running ? 'RUNNING MODEL' : completed ? 'COMPLETE' : 'READY'}</Badge>} /><CardContent style={{ padding: 0 }}><div className="sim-table-wrap"><table className="sim-table"><thead><tr><th>Request</th><th>Account</th><th>Attempt</th><th>Outcome</th><th>Allocation</th></tr></thead><tbody>{requests.map((request) => <tr key={request.id} className={`sim-row ${request.status === 'Allocated' ? 'row-allocated' : request.status === 'No seat available' ? 'row-waitlist' : ''}`}><td><strong>{request.id}</strong><div className="app-hash">POST /api/v1/entries/</div></td><td>{request.account}</td><td>{request.attempt}</td><td><span className={`status-pill pill-${statusClass(request.status)}`}>{request.status}</span></td><td>{request.seat ? <span className="slot-assigned-badge">{request.seat}</span> : <span className="slot-empty">—</span>}</td></tr>)}</tbody></table></div></CardContent></Card></div>
-        <div className="sim-console-col"><Card className="console-card"><CardHeader title="Run log" action={<span className="console-live-tag">LOCAL MODEL</span>} /><CardContent><div className="console-output">{logs.map((log, index) => <div key={`${log}-${index}`} className="log-line">{log}</div>)}</div>
-          {completed && <div className="completion-card animate-fade-in"><h4>Scenario summary</h4><p>{accepted.length} unique entries accepted; {duplicateCount} duplicates blocked; {limitedCount} requests rate limited; {allocatedCount} seats assigned.</p><p className="receipt-hash">The API currently exposes aggregate entry count, allocated count, and allocation rate. This panel reports only the simulated scenario above.</p></div>}
-        </CardContent></Card></div>
+        <div className="sim-table-col">
+          <Card>
+            <CardHeader
+              title="Live request trace"
+              action={
+                <Badge
+                  variant={
+                    running
+                      ? 'warning'
+                      : completed
+                        ? 'success'
+                        : 'secondary'
+                  }
+                  dot
+                >
+                  {running
+                    ? 'RUNNING'
+                    : completed
+                      ? 'COMPLETE'
+                      : 'READY'}
+                </Badge>
+              }
+            />
+
+            <CardContent style={{ padding: 0 }}>
+              <div className="sim-table-wrap">
+                <table className="sim-table">
+                  <thead>
+                    <tr>
+                      <th>Request</th>
+                      <th>Account</th>
+                      <th>Status</th>
+                      <th>Latency</th>
+                      <th>Outcome</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {results.length > 0 ? (
+                      results.map((result, index) => (
+                        <tr
+                          key={`${result.email}-${index}`}
+                          className={`sim-row ${
+                            result.status >= 200 &&
+                            result.status < 300
+                              ? 'row-allocated'
+                              : ''
+                          }`}
+                        >
+                          <td>
+                            <strong>
+                              REQ-{String(index + 1).padStart(2, '0')}
+                            </strong>
+
+                            <div className="app-hash">
+                              POST /api/v1/entries/
+                            </div>
+                          </td>
+
+                          <td>{result.email}</td>
+
+                          <td>
+                            <span
+                              className={`status-pill pill-${statusClass(
+                                result.status
+                              )}`}
+                            >
+                              {result.status}
+                            </span>
+                          </td>
+
+                          <td>
+                            {typeof result.latency === 'number'
+                              ? `${result.latency} ms`
+                              : '—'}
+                          </td>
+
+                          <td>
+                            {typeof result.status === 'number'
+                              ? STATUS_LABELS[result.status] ||
+                                (result.status >= 200 &&
+                                result.status < 300
+                                  ? 'Success'
+                                  : 'Rejected')
+                              : 'Error'}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="5">
+                          <div
+                            style={{
+                              padding: '32px',
+                              textAlign: 'center',
+                              opacity: 0.7,
+                            }}
+                          >
+                            No live request results yet. Start the
+                            simulation to generate real backend traffic.
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="sim-console-col">
+          <Card className="console-card">
+            <CardHeader
+              title="Backend run log"
+              action={
+                <span className="console-live-tag">
+                  LIVE API
+                </span>
+              }
+            />
+
+            <CardContent>
+              <div className="console-output">
+                {logs.map((log, index) => (
+                  <div
+                    key={`${log}-${index}`}
+                    className="log-line"
+                  >
+                    {log}
+                  </div>
+                ))}
+              </div>
+
+              {completed && simulation && (
+                <div className="completion-card animate-fade-in">
+                  <h4>Simulation summary</h4>
+
+                  <p>
+                    {successfulCount} of {simulation.requests}{' '}
+                    requests completed successfully, producing a{' '}
+                    {successRate}% success rate.
+                  </p>
+
+                  <p>
+                    Average latency was{' '}
+                    {simulation.average_latency_ms} ms with a
+                    P95 latency of{' '}
+                    {simulation.p95_latency_ms} ms.
+                  </p>
+
+                  <p className="receipt-hash">
+                    Total backend execution time:{' '}
+                    {simulation.total_time_ms} ms.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div className="simulation-controls-note">
-        <strong>Backend controls represented</strong>
-        <span>Entry endpoint: 5 requests per minute per authenticated user; one entry per user per drop; registration-window checks; randomized allocation after registration closes; allocation uses transactions and row locking. The allocation endpoint also requires an idempotency key. This UI does not send requests or measure database contention.</span>
+        <strong>Live backend controls</strong>
+
+        <span>
+          This page sends real authenticated requests to the FairDrop
+          Django API. The backend applies the configured per-user
+          entry rate limit, one-entry-per-user-per-drop constraint,
+          registration-window checks, and database persistence.
+          The metrics above are measured from actual HTTP responses,
+          not a browser-only animation.
+        </span>
       </div>
     </div>
   );

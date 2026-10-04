@@ -125,6 +125,7 @@ class MyAllocationStatusView(APIView):
                 "joined_at": entry.joined_at,
                 "entry_position": entry_position,
                 "total_entries": entry_counts[entry.drop_id],
+                "allocation_complete": entry.drop.is_allocation_complete,
                 "allocation": ({
                     "seat_number": allocation.seat.seat_number,
                     "allocated_at": allocation.allocated_at,

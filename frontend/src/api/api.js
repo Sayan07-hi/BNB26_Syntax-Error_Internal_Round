@@ -1,13 +1,34 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
+function notifyAuthChange() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('fairdrop-auth-change'));
+  }
+}
+
 export function setTokens(tokens) {
   localStorage.setItem('fairDropAccessToken', tokens.access);
   localStorage.setItem('fairDropRefreshToken', tokens.refresh);
+  notifyAuthChange();
 }
 
 export function clearTokens() {
   localStorage.removeItem('fairDropAccessToken');
   localStorage.removeItem('fairDropRefreshToken');
+  notifyAuthChange();
+}
+
+export function isAdminUser() {
+  const token = localStorage.getItem('fairDropAccessToken');
+  if (!token) return false;
+
+  try {
+    const encodedPayload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(encodedPayload.padEnd(Math.ceil(encodedPayload.length / 4) * 4, '=')));
+    return payload.is_staff === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function apiRequest(path, { method = 'GET', body, headers = {}, auth = true } = {}) {

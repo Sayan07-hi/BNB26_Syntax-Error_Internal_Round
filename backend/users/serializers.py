@@ -43,6 +43,12 @@ class RegisterSerializer(serializers.ModelSerializer):
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Keep SimpleJWT's username request key, with email-only validation."""
 
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token["is_staff"] = user.is_staff
+        return token
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["username"] = serializers.EmailField(
