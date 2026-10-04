@@ -1,0 +1,4 @@
+import Card, { CardContent, CardHeader } from '../../components/Card';
+import Badge from '../../components/Badge';
+import { Link } from 'react-router-dom';
+export default function AdminMonitoring(){return <main className="animate-fade-in" style={{display:'grid',gap:'1.25rem'}}><Badge variant="secondary">SIMULATION ONLY</Badge><h1>Traffic monitoring demo</h1><Card><CardHeader title="No live telemetry connection"/><CardContent><p>This page does not receive server events or load measurements. Use the browser-only <Link to="/simulation">traffic simulation</Link> to compare normal and adversarial request profiles.</p><p>The backend enforces a per-user entry throttle and one entry per user per drop. This page does not report live traffic, latency, active nodes, or throughput.</p></CardContent></Card></main>;}

@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
@@ -102,3 +103,31 @@ class AllocationMetricsView(APIView):
         metrics = get_allocation_metrics(drop_id)
 
         return Response(metrics)
+
+
+class MyAllocationStatusView(APIView):
+    """Return only the signed-in user's drop entries and allocation results."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        entries = list(Entry.objects.filter(user=request.user).select_related("drop").prefetch_related("allocation__seat").order_by("joined_at", "id"))
+        results = []
+        entry_counts = {drop_id: Entry.objects.filter(drop_id=drop_id).count() for drop_id in {entry.drop_id for entry in entries}}
+        for entry in entries:
+            allocation = getattr(entry, "allocation", None)
+            entry_position = Entry.objects.filter(drop_id=entry.drop_id).filter(
+                Q(joined_at__lt=entry.joined_at) | Q(joined_at=entry.joined_at, id__lte=entry.id)
+            ).count()
+            results.append({
+                "entry_id": entry.id,
+                "drop_id": entry.drop_id,
+                "drop_name": entry.drop.name,
+                "joined_at": entry.joined_at,
+                "entry_position": entry_position,
+                "total_entries": entry_counts[entry.drop_id],
+                "allocation": ({
+                    "seat_number": allocation.seat.seat_number,
+                    "allocated_at": allocation.allocated_at,
+                } if allocation else None),
+            })
+        return Response(results)

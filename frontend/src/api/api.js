@@ -1,0 +1,45 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+
+export function setTokens(tokens) {
+  localStorage.setItem('fairDropAccessToken', tokens.access);
+  localStorage.setItem('fairDropRefreshToken', tokens.refresh);
+}
+
+export function clearTokens() {
+  localStorage.removeItem('fairDropAccessToken');
+  localStorage.removeItem('fairDropRefreshToken');
+}
+
+export async function apiRequest(path, { method = 'GET', body, headers = {}, auth = true } = {}) {
+  const access = auth ? localStorage.getItem('fairDropAccessToken') : null;
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(access ? { Authorization: `Bearer ${access}` } : {}),
+      ...headers,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = payload?.detail || Object.values(payload || {}).flat().join(' ') || `Request failed (${response.status})`;
+    if (response.status === 401 && auth) {
+      clearTokens();
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    }
+    throw new Error(detail);
+  }
+  return payload;
+}
+
+export async function login(email, password) {
+  const tokens = await apiRequest('/auth/login/', { method: 'POST', body: { username: email.trim(), password }, auth: false });
+  setTokens(tokens);
+  return tokens;
+}
+
+export const configuredDropId = import.meta.env.VITE_DEMO_DROP_ID || '1';
+

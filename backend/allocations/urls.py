@@ -3,10 +3,12 @@ from .views import (
     AllocationCreateView,
     FairAllocationView,
     AllocationMetricsView,
+    MyAllocationStatusView,
 )
 
 
 urlpatterns = [
+    path("mine/", MyAllocationStatusView.as_view(), name="my-allocation-status"),
     path(
         "",
         AllocationCreateView.as_view(),
