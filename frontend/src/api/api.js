@@ -7,19 +7,19 @@ function notifyAuthChange() {
 }
 
 export function setTokens(tokens) {
-  localStorage.setItem('fairDropAccessToken', tokens.access);
-  localStorage.setItem('fairDropRefreshToken', tokens.refresh);
+  sessionStorage.setItem('fairDropAccessToken', tokens.access);
+  sessionStorage.setItem('fairDropRefreshToken', tokens.refresh);
   notifyAuthChange();
 }
 
 export function clearTokens() {
-  localStorage.removeItem('fairDropAccessToken');
-  localStorage.removeItem('fairDropRefreshToken');
+  sessionStorage.removeItem('fairDropAccessToken');
+  sessionStorage.removeItem('fairDropRefreshToken');
   notifyAuthChange();
 }
 
 export function isAdminUser() {
-  const token = localStorage.getItem('fairDropAccessToken');
+  const token = sessionStorage.getItem('fairDropAccessToken');
   if (!token) return false;
 
   try {
@@ -32,7 +32,7 @@ export function isAdminUser() {
 }
 
 export async function apiRequest(path, { method = 'GET', body, headers = {}, auth = true } = {}) {
-  const access = auth ? localStorage.getItem('fairDropAccessToken') : null;
+  const access = auth ? sessionStorage.getItem('fairDropAccessToken') : null;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: {

@@ -8,7 +8,7 @@ import './Navbar.css';
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(localStorage.getItem('fairDropAccessToken')));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(sessionStorage.getItem('fairDropAccessToken')));
   const [isAdmin, setIsAdmin] = useState(() => isAdminUser());
   const navigate = useNavigate();
   const location = useLocation();
@@ -22,7 +22,7 @@ const Navbar = () => {
 
   useEffect(() => {
     const syncAuthentication = () => {
-      setIsAuthenticated(Boolean(localStorage.getItem('fairDropAccessToken')));
+      setIsAuthenticated(Boolean(sessionStorage.getItem('fairDropAccessToken')));
       setIsAdmin(isAdminUser());
     };
     window.addEventListener('fairdrop-auth-change', syncAuthentication);

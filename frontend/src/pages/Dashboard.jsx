@@ -7,29 +7,31 @@ import { apiRequest } from '../api/api';
 
 const formatDate = (value) => value ? new Date(value).toLocaleString() : '—';
 
+const registrationLabel = (drop) => ({
+  upcoming: `Registration opens ${formatDate(drop.registration_start)}`,
+  open: 'Registration Open',
+  closed: 'Registration Closed',
+}[drop.registration_status] || 'Registration status unavailable');
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [activeDrop, setActiveDrop] = useState(null);
+  const [drops, setDrops] = useState([]);
   const [entries, setEntries] = useState([]);
   const [dropLoading, setDropLoading] = useState(true);
   const [entryLoading, setEntryLoading] = useState(true);
   const [refreshCount, setRefreshCount] = useState(0);
   const [dropError, setDropError] = useState('');
   const [message, setMessage] = useState('');
-  const [joining, setJoining] = useState(false);
+  const [joiningDropId, setJoiningDropId] = useState(null);
 
   useEffect(() => {
     let active = true;
-    apiRequest('/active/', { auth: false })
-      .then((drop) => {
-        if (!active) return;
-        setActiveDrop(drop);
-        localStorage.setItem('fairDropDropId', String(drop.id));
-      })
+    apiRequest('/list/', { auth: false })
+      .then((items) => active && setDrops(items))
       .catch((error) => active && setDropError(error.message))
       .finally(() => active && setDropLoading(false));
 
-    if (localStorage.getItem('fairDropAccessToken')) {
+    if (sessionStorage.getItem('fairDropAccessToken')) {
       apiRequest('/allocations/mine/')
         .then((items) => active && setEntries(items))
         .catch((error) => active && setMessage(error.message))
@@ -40,88 +42,70 @@ export default function Dashboard() {
     return () => { active = false; };
   }, [refreshCount]);
 
-  const allocationComplete = activeDrop?.allocation_status === 'complete';
-
-  const entry = activeDrop
-    ? entries.find((item) => Number(item.drop_id) === Number(activeDrop.id))
-    : null;
-
-  async function join() {
-    if (!activeDrop) return;
-    setJoining(true);
+  async function join(drop) {
+    if (joiningDropId !== null || drop.registration_status !== 'open') return;
+    setJoiningDropId(drop.id);
     setMessage('');
     try {
       const result = await apiRequest('/entries/', {
         method: 'POST',
-        body: { drop: activeDrop.id },
+        body: { drop: drop.id },
       });
       localStorage.setItem('fairDropEntryId', String(result.id));
-      localStorage.setItem('fairDropDropId', String(activeDrop.id));
       navigate('/my-allocation');
     } catch (error) {
       setMessage(error.message);
     } finally {
-      setJoining(false);
+      setJoiningDropId(null);
     }
   }
 
-  const registrationLabel = {
-    upcoming: `Registration opens ${formatDate(activeDrop?.registration_start)}`,
-    open: 'Registration Open',
-    closed: 'Registration Closed',
-  }[activeDrop?.registration_status] || 'Registration status unavailable';
+  function viewEntry(entry) {
+    localStorage.setItem('fairDropEntryId', String(entry.entry_id));
+    navigate('/my-allocation');
+  }
 
   return (
     <main className="animate-fade-in" style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gap: '1.5rem' }}>
       <header>
         <Badge variant="primary">DASHBOARD</Badge>
-        <h1>Current Drop</h1>
-        <p>Participate in the Drop published by the FairDrop administrator.</p>
+        <h1>Available Drops</h1>
+        <p>Choose a Drop to register. Each Drop has its own registration window and allocation.</p>
       </header>
 
-      <Card>
-        <CardHeader
-          title={dropLoading ? 'Loading published Drop…' : activeDrop?.name || 'No active Drop'}
-          action={activeDrop && <Badge variant={activeDrop.registration_status === 'open' ? 'success' : activeDrop.registration_status === 'upcoming' ? 'warning' : 'secondary'}>{registrationLabel}</Badge>}
-        />
-        <CardContent>
-          {dropLoading ? <p>Loading Drop details…</p> : !activeDrop ? (
-            <p role="status">{dropError || 'No active Drop has been published yet.'}</p>
-          ) : (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}><Button variant="outline" size="sm" onClick={() => setRefreshCount((count) => count + 1)}>Refresh Drop status</Button></div>
-              {activeDrop.description && <p>{activeDrop.description}</p>}
+      {dropLoading ? <p role="status">Loading available Drops…</p> : dropError ? (
+        <Card><CardContent><p role="alert" style={{ color: '#b91c1c' }}>{dropError}</p></CardContent></Card>
+      ) : drops.length === 0 ? (
+        <Card><CardContent><p role="status">No Drops are available yet.</p></CardContent></Card>
+      ) : drops.map((drop) => {
+        const entry = entries.find((item) => Number(item.drop_id) === Number(drop.id));
+        const badgeVariant = drop.registration_status === 'open' ? 'success' : drop.registration_status === 'upcoming' ? 'warning' : 'secondary';
+        return (
+          <Card key={drop.id}>
+            <CardHeader title={`${drop.name} (#${drop.id})`} action={<Badge variant={badgeVariant}>{registrationLabel(drop)}</Badge>} />
+            <CardContent>
+              {drop.description && <p>{drop.description}</p>}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: '1rem', margin: '1rem 0' }}>
-                <div><strong>Drop ID</strong><div>#{activeDrop.id}</div></div>
-                <div><strong>Registration opens</strong><div>{formatDate(activeDrop.registration_start)}</div></div>
-                <div><strong>Registration closes</strong><div>{formatDate(activeDrop.registration_end)}</div></div>
-                <div><strong>Seats remaining</strong><div>{activeDrop.remaining_seats} / {activeDrop.total_seats}</div></div>
-                <div><strong>Total entries</strong><div>{activeDrop.total_entries}</div></div>
-                <div><strong>Allocation</strong><div>{activeDrop.allocation_status === 'complete' ? 'Complete' : activeDrop.allocation_status === 'started' ? 'In progress' : 'Not started'}</div></div>
+                <div><strong>Total seats</strong><div>{drop.total_seats}</div></div>
+                <div><strong>Registration opens</strong><div>{formatDate(drop.registration_start)}</div></div>
+                <div><strong>Registration closes</strong><div>{formatDate(drop.registration_end)}</div></div>
+                <div><strong>Entries</strong><div>{drop.total_entries}</div></div>
               </div>
-              {activeDrop.registration_status === 'open' && !entry && (
-                <Button type="button" variant="primary" loading={joining} onClick={join}>Join Drop</Button>
+              {entry ? (
+                <Button variant="secondary" onClick={() => viewEntry(entry)}>View your entry</Button>
+              ) : drop.registration_status === 'open' ? (
+                <Button variant="primary" loading={joiningDropId === drop.id} disabled={joiningDropId !== null} onClick={() => join(drop)}>Register</Button>
+              ) : (
+                <Button variant="outline" disabled>{drop.registration_status === 'upcoming' ? 'Registration not open' : 'Registration closed'}</Button>
               )}
-              {activeDrop.registration_status === 'upcoming' && <p>Entry submission will be available when registration opens.</p>}
-              {activeDrop.registration_status === 'closed' && <p>This Drop is no longer accepting entries.</p>}
-              {message && <p role="alert" style={{ color: '#b91c1c' }}>{message}</p>}
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        );
+      })}
 
-      <Card>
-        <CardHeader title="Your entry" action={entry && <Badge variant={entry.allocation ? 'success' : allocationComplete ? 'secondary' : 'warning'}>{entry.allocation ? 'ALLOCATED' : allocationComplete ? 'NOT ALLOCATED' : 'AWAITING ALLOCATION'}</Badge>} />
-        <CardContent>
-          {entryLoading ? <p>Loading your entry…</p> : entry ? (
-            <>
-              <p>Entry reference: <strong>{entry.entry_id}</strong></p>
-              <p>{entry.allocation ? `Assigned seat #${entry.allocation.seat_number}` : allocationComplete ? 'No seat was available in this allocation.' : 'Your entry has not received an allocation result yet.'}</p>
-              <Button variant="outline" onClick={() => navigate('/my-allocation')}>View allocation result</Button>
-            </>
-          ) : <p>{activeDrop ? 'You have not entered this Drop yet.' : 'Your entry for the current Drop will appear here.'}</p>}
-        </CardContent>
-      </Card>
+      {message && <p role="alert" style={{ color: '#b91c1c' }}>{message}</p>}
+      {entryLoading && <p>Loading your entries…</p>}
+      {!entryLoading && entries.length > 0 && <Card><CardHeader title="Your registrations" /><CardContent><div style={{ display: 'grid', gap: '.75rem' }}>{entries.map((entry) => <div key={entry.entry_id} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}><span><strong>{entry.drop_name}</strong> · {entry.allocation ? `Allocated · Seat #${entry.allocation.seat_number}` : entry.allocation_complete ? 'Not allocated' : 'Awaiting allocation'}</span><Button variant="outline" size="sm" onClick={() => viewEntry(entry)}>View result</Button></div>)}</div></CardContent></Card>}
 
       <Card>
         <CardHeader title="Allocation process" />

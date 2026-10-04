@@ -7,7 +7,8 @@ import './Simulation.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const DEFAULT_DROP_ID = import.meta.env.VITE_DEMO_DROP_ID ? Number(import.meta.env.VITE_DEMO_DROP_ID) : '';
-const DEFAULT_CONCURRENCY = 5;
+const DEFAULT_CONCURRENCY = 25;
+const SIMULATION_USERS = Array.from({ length: 25 }, (_, index) => `sim${String(index + 1).padStart(2, '0')}@test.com`);
 
 const getInitialDropId = () => {
   const storedDropId = localStorage.getItem('fairDropDropId');
@@ -98,7 +99,7 @@ const Simulation = () => {
   const runSimulation = async () => {
     if (running) return;
 
-    const accessToken = localStorage.getItem('fairDropAccessToken');
+    const accessToken = sessionStorage.getItem('fairDropAccessToken');
 
     if (!accessToken) {
       addLog('No FairDrop access token found. Please log in first.');
@@ -145,8 +146,8 @@ const Simulation = () => {
       const payload = await response.json().catch(() => null);
 
       if (response.status === 401) {
-        localStorage.removeItem('fairDropAccessToken');
-        localStorage.removeItem('fairDropRefreshToken');
+        sessionStorage.removeItem('fairDropAccessToken');
+        sessionStorage.removeItem('fairDropRefreshToken');
         window.location.assign('/login');
         return;
       }
@@ -263,7 +264,7 @@ const Simulation = () => {
                   setConcurrency(Number(event.target.value))
                 }
               >
-                {[1, 2, 3, 4, 5].map((value) => (
+                {Array.from({ length: 25 }, (_, index) => index + 1).map((value) => (
                   <option key={value} value={value}>
                     {value}
                   </option>
@@ -311,12 +312,12 @@ const Simulation = () => {
       <Card className="simulated-participants-card">
         <CardHeader
           title="LIVE CONCURRENT USER SIMULATION"
-          action={<Badge variant="primary">5 authenticated participants</Badge>}
+          action={<Badge variant="primary">25 simulated accounts available</Badge>}
         />
         <CardContent>
-          <p style={{ marginTop: 0 }}>These are simulated authenticated accounts making real concurrent HTTP requests; they are not five human users.</p>
+          <p style={{ marginTop: 0 }}>These simulated accounts make real concurrent HTTP requests; they are not human users.</p>
           <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
-            {['sim01@test.com', 'sim02@test.com', 'sim03@test.com', 'sim04@test.com', 'sim05@test.com'].map((email) => (
+            {SIMULATION_USERS.map((email) => (
               <Badge key={email} variant="secondary">{email}</Badge>
             ))}
           </div>

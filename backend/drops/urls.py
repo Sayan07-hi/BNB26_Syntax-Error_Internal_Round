@@ -4,11 +4,17 @@ from .views import (
     SimulationRunView,
     CreateDropView,
     ActiveDropView,
+    DropListView,
     EndRegistrationView,
 )
 
 
 urlpatterns = [
+    path(
+        "list/",
+        DropListView.as_view(),
+        name="drop-list",
+    ),
     path(
         "active/",
         ActiveDropView.as_view(),

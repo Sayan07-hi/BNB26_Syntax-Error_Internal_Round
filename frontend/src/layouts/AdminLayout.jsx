@@ -7,7 +7,7 @@ import './AdminLayout.css';
 const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  if (!localStorage.getItem('fairDropAccessToken')) return <Navigate to="/login" replace />;
+  if (!sessionStorage.getItem('fairDropAccessToken')) return <Navigate to="/login" replace />;
   if (!isAdminUser()) return <Navigate to="/dashboard" replace />;
 
   return (

@@ -113,6 +113,16 @@ class ActiveDropView(APIView):
         return Response(CreateDropView.serialize_drop(drop))
 
 
+class DropListView(APIView):
+    """List database Drops and their current registration/allocation status."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        drops = Drop.objects.all().order_by("-created_at", "-id")
+        return Response([CreateDropView.serialize_drop(drop) for drop in drops])
+
+
 class EndRegistrationView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -139,18 +149,23 @@ class SimulationRunView(APIView):
         except (KeyError, TypeError, ValueError):
             raise ValidationError("drop_id must be a valid Drop ID.")
         try:
-            concurrency = int(request.data.get("concurrency", 5))
+            concurrency = int(request.data.get("concurrency", 25))
         except (TypeError, ValueError):
             raise ValidationError("concurrency must be a valid number.")
-        if concurrency < 1 or concurrency > 5:
-            raise ValidationError("concurrency must be between 1 and 5.")
+        if concurrency < 1 or concurrency > 25:
+            raise ValidationError("concurrency must be between 1 and 25.")
 
         User = get_user_model()
 
+        simulation_emails = [
+            f"sim{number:02d}@test.com" for number in range(1, 26)
+        ]
         users = list(
             User.objects.filter(
-                email__startswith="sim"
-            ).order_by("id")[:concurrency]
+                email__in=simulation_emails,
+                is_active=True,
+                is_staff=False,
+            ).order_by("email")[:concurrency]
         )
 
         if len(users) < concurrency:
