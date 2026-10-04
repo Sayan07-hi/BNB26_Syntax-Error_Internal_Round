@@ -1,0 +1,3 @@
+import Card, { CardContent, CardHeader } from '../../components/Card';
+import Badge from '../../components/Badge';
+export default function AdminApplications(){return <main className="animate-fade-in" style={{display:'grid',gap:'1rem'}}><Badge variant="secondary">NOT CONNECTED</Badge><h1>Entry records</h1><Card><CardHeader title="Applicant listing is not available"/><CardContent><p>The backend currently provides aggregate metrics and an allocation action, but no administrator endpoint to list or inspect all applicants. This page is retained as a route and does not show fabricated records or claim to export them.</p></CardContent></Card></main>;}
